@@ -3,7 +3,7 @@ from keras.layers import Input, Layer
 from keras.layers.wrappers import TimeDistributed
 from keras.layers.core import Dense, Lambda
 from keras.layers.embeddings import Embedding
-from keras.layers.recurrent import LSTM
+from keras.layers.recurrent import GRU
 
 import keras.losses as losses
 import keras.backend as K
@@ -17,17 +17,17 @@ def vae_lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_
             input_length=input_length, mask_zero=True)
 
     x = embedding_layer(inputs)
-    x = LSTM(encoder_hidden_dim, input_shape=(input_length, embedding_dim), name='encoder')(x)
+    x = GRU(encoder_hidden_dim, input_shape=(input_length, embedding_dim), name='encoder')(x)
 
-    mu = Dense(latent_dim)(x)
-    log_var = Dense(latent_dim, activation='softplus')(x)
-    epsilon = K.random_normal(shape=(latent_dim,), mean=0., stddev=1.)
-    z = Lambda(lambda x: x[0] + K.exp(x[1] / 2) * epsilon, output_shape=(latent_dim,))([mu, log_var])
+    mu = Dense(latent_dim, name='mu')(x)
+    log_var = Dense(latent_dim, name='log_var')(x)
+    epsilon = Lambda(lambda x: K.random_normal(shape=(latent_dim,), mean=0., stddev=1.))(x)
+    z = Lambda(lambda x: x[0] + K.exp(x[1] / 2) * x[2], output_shape=(latent_dim,))([mu, log_var, epsilon])
 
     h_0 = Dense(decoder_hidden_dim)(z)
     x = embedding_layer(tf)
     #need to figure out how to initialize the cell state as trainable weights
-    x = LSTM(decoder_hidden_dim, name='decoder', return_sequences=True)(x, initial_state=[h_0, h_0])
+    x = GRU(decoder_hidden_dim, name='decoder', return_sequences=True)(x, initial_state=[h_0])
     x = TimeDistributed(Dense(vocab_size, activation='softmax'))(x)
 
     #loss calculations
@@ -40,7 +40,8 @@ def vae_lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_
     outputs = CustomLossLayer(name='y')([x, xent, kl_loss])
 
     model = Model(inputs=[inputs, tf], outputs=[outputs, xent, kl_loss])
-    return model
+    encoder = Model(inputs=[inputs], outputs=[mu, log_var])
+    return encoder, model
 
 class CustomLossLayer(Layer):
     def __init__(self, **kwargs):
