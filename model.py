@@ -19,10 +19,10 @@ def vae_lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_
     x = embedding_layer(inputs)
     x = GRU(encoder_hidden_dim, input_shape=(input_length, embedding_dim), name='encoder')(x)
 
-    mu = Dense(latent_dim, name='mu')(x)
-    log_var = Dense(latent_dim, name='log_var')(x)
+    mu = Dense(latent_dim)(x)
+    sigma = Dense(latent_dim, activation='softplus')(x)
     epsilon = Lambda(lambda x: K.random_normal(shape=(latent_dim,), mean=0., stddev=1.))(x)
-    z = Lambda(lambda x: x[0] + K.exp(x[1] / 2) * x[2], output_shape=(latent_dim,))([mu, log_var, epsilon])
+    z = Lambda(lambda x: x[0] + x[1] * x[2], output_shape=(latent_dim,))([mu, sigma, epsilon])
 
     h_0 = Dense(decoder_hidden_dim)(z)
     x = embedding_layer(tf)
@@ -31,8 +31,8 @@ def vae_lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_
     x = TimeDistributed(Dense(vocab_size, activation='softmax'))(x)
 
     #loss calculations
-    kl_loss = Lambda(lambda x: -0.5 * K.sum(1 + x[1] - K.square(x[0]) - K.exp(x[1])), \
-            output_shape=(1,), name='kl_loss')([mu, log_var])
+    kl_loss = Lambda(lambda x: -0.5 * K.sum(1 + K.log(x[1]) - K.square(x[0]) - x[1]), \
+            output_shape=(1,), name='kl_loss')([mu, sigma])
     one_hot = Embedding(input_dim=vocab_size, output_dim=vocab_size, \
             embeddings_initializer='identity', mask_zero=True, trainable=False)(inputs)
     xent = Lambda(lambda x: K.sum(losses.categorical_crossentropy(x[0], x[1])), \
@@ -40,7 +40,7 @@ def vae_lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_
     outputs = CustomLossLayer(name='y')([x, xent, kl_loss])
 
     model = Model(inputs=[inputs, tf], outputs=[outputs, xent, kl_loss])
-    encoder = Model(inputs=[inputs], outputs=[mu, log_var])
+    encoder = Model(inputs=[inputs], outputs=[mu, sigma])
     return encoder, model
 
 class CustomLossLayer(Layer):
@@ -53,7 +53,7 @@ class CustomLossLayer(Layer):
         xent = inputs[1]
         kl_loss = inputs[2]
 
-        loss = xent #+ kl_loss
+        loss = xent + kl_loss
         self.add_loss(loss, inputs=inputs)
         return inputs[0]
 
