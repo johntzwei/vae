@@ -2,11 +2,13 @@ import os
 import pickle
 
 import model
+import baseline
 
 from nltk import CFG
 from nltk.parse.generate import generate
 
 from keras.preprocessing.sequence import pad_sequences
+from keras import optimizers
 
 #binary branching parens language
 grammar5 = CFG.fromstring( \
@@ -24,7 +26,8 @@ def base_cases(grammar, depth):
     return cases
 
 def text_to_sequence(texts, vocab, maxlen=30, pre=False, padding='<EOS>'):
-    word_to_n = { word : i for i, word in enumerate(vocab) }
+    word_to_n = { word : i for i, word in enumerate(vocab, 1) }
+    word_to_n['<mask>'] = 0         #keras masking
     n_to_word = { i : word for word, i in word_to_n.items() }
 
     sequences = []
@@ -39,7 +42,7 @@ def text_to_sequence(texts, vocab, maxlen=30, pre=False, padding='<EOS>'):
     return sequences, word_to_n, n_to_word
 
 if __name__ == '__main__':
-    X = base_cases(grammar5, 10)
+    X = base_cases(grammar5, 8)
     vocab = list('()*') + ['<EOS>']
 
     sequences, word_to_n, n_to_word = text_to_sequence(X, vocab)
@@ -49,14 +52,15 @@ if __name__ == '__main__':
     print('Contains %d unique words.' % len(vocab))
 
     print('Building model...')
-    encoder, vae_lm = model.vae_lm(vocab_size=len(vocab), \
+    encoder, vae_lm = baseline.lm(vocab_size=len(vocab)+1, \
             embedding_dim=4, encoder_hidden_dim=10, decoder_hidden_dim=10, latent_dim=2)
-    vae_lm.compile(optimizer='rmsprop', loss={'xent':model.zero, 'dist_loss':model.zero}, \
+    trainer = optimizers.RMSprop(lr=0.01)
+    vae_lm.compile(optimizer=trainer, loss={'xent':None, 'dist_loss':None}, \
             metrics={'xent':model.identity, 'dist_loss':model.identity})
     print('Done.')
 
     print('Training model...')
-    vae_lm.fit([sequences, tf_sequences], [sequences, tf_sequences], batch_size=32, epochs=1000)
+    vae_lm.fit([sequences, tf_sequences], [sequences, tf_sequences], batch_size=32, epochs=10000)
     print('Done.')
 
     RUN = 'cfgs'
