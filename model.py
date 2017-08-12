@@ -1,12 +1,12 @@
+from utils import CustomLossLayer, neg_log_likelihood
+
 from keras.models import Model
 from keras.layers import Input
-from keras.engine.topology import Layer
 from keras.layers.wrappers import TimeDistributed
 from keras.layers.core import Dense, Lambda
 from keras.layers.embeddings import Embedding
 from keras.layers.recurrent import LSTM, GRU
 
-import keras.losses as losses
 import keras.backend as K
 
 def vae_lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_dim=100, \
@@ -26,46 +26,30 @@ def vae_lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_
 
     h_0 = Dense(decoder_hidden_dim)(z)
     x = embedding_layer(tf)
-    x = GRU(decoder_hidden_dim, name='decoder', unroll=True, return_sequences=True)(x, initial_state=[h_0])
+    x = GRU(decoder_hidden_dim, name='decoder', unroll=True, return_sequences=True, activation=None)(x, initial_state=[h_0])
     x = TimeDistributed(Dense(vocab_size, activation='softmax'))(x)
 
     #loss calculations
     dist_loss = Lambda(maximize_noise_loss, name='dist_loss')([mu, sigma])
     one_hot = Embedding(input_dim=vocab_size, output_dim=vocab_size, \
             embeddings_initializer='identity', mask_zero=True, trainable=False)(inputs)
-    xent = Lambda(lambda x: K.sum(losses.categorical_crossentropy(x[0], x[1])), \
-            output_shape=(1,))([one_hot, x])
-    xent = CustomLossLayer(name='xent')([xent, dist_loss])
+    xent = Lambda(lambda x: neg_log_likelihood(x[0], x[1]), output_shape=(1,), name='xent')([one_hot, x])
+    loss = Lambda(lambda x: x[0] + K.exp(-K.stop_gradient(x[0])) * x[1], \
+            output_shape=(1,))([xent, dist_loss])
+    x = CustomLossLayer()(loss)
 
     encoder = Model(inputs=[inputs], outputs=[mu, sigma])
-    model = Model(inputs=[inputs, tf], outputs=[xent, dist_loss])
+    model = Model(inputs=[inputs, tf], outputs=[xent, dist_loss, x])
     return encoder, model
 
+#distribution losses
 def kl_loss(x):
     mu, sigma = x[0], x[1]
     return -0.5 * K.sum(1 + K.log(sigma) - K.square(mu) - sigma)
 
 def maximize_noise_loss(x):
     mu, sigma = x[0], x[1]
-    return K.sum(K.square(mu) + 1./K.square(sigma))
-
-def identity(y_true, y_pred):
-    return y_pred
-
-def zero(y_true, y_pred):
-    return K.zeros((1,))
-
-class CustomLossLayer(Layer):
-    def __init__(self, **kwargs):
-        self.is_placeholder = True
-        super(CustomLossLayer, self).__init__(**kwargs)
-
-    def call(self, inputs, mask=None):
-        xent = inputs[0]
-        kl_loss = inputs[1]
-        loss = xent + K.exp(-K.stop_gradient(xent)) * kl_loss
-        self.add_loss(loss, inputs=inputs)
-        return inputs[0]
+    return 1e-06 + K.sum(K.square(mu) + 1./K.square(sigma))
 
 if __name__ == '__main__':
     encoder, lm = vae_lm()

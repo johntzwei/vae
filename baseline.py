@@ -1,3 +1,5 @@
+from utils import CustomLossLayer, neg_log_likelihood
+
 from keras.models import Model
 from keras.layers import Input
 from keras.engine.topology import Layer
@@ -7,8 +9,6 @@ from keras.layers.embeddings import Embedding
 from keras.layers.recurrent import LSTM, GRU
 
 import keras.backend as K
-import tensorflow as tf
-K.set_session(tf.Session())
 
 def lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_dim=100, \
         decoder_hidden_dim=100, latent_dim=50):
@@ -21,7 +21,7 @@ def lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_dim=
     x = embedding_layer(inputs)
     #problem is here!
     h_0 = GRU(encoder_hidden_dim, input_shape=(input_length, embedding_dim), unroll=True, \
-            return_state=False, name='encoder')(x)
+            return_state=True, name='encoder')(x)[-1]
 
     x = embedding_layer(tf)
     x = GRU(decoder_hidden_dim, name='decoder', unroll=True, return_sequences=True)(x, initial_state=[h_0])
@@ -36,27 +36,6 @@ def lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_dim=
     encoder = Model(inputs=[inputs], outputs=[h_0])
     model = Model(inputs=[inputs, tf], outputs=[x])
     return encoder, model
-
-class CustomLossLayer(Layer):
-    def __init__(self, **kwargs):
-        self.is_placeholder = True
-        super(CustomLossLayer, self).__init__(**kwargs)
-
-    def call(self, inputs, mask=None):
-        loss = inputs
-        self.add_loss(loss, inputs=inputs)
-        return inputs
-
-def neg_log_likelihood(y_true, y_pred):
-    probs = tf.multiply(y_true, y_pred)
-    probs = K.sum(probs, axis=-1)
-    return K.sum(-K.log(probs))
-
-def identity(y_true, y_pred):
-    return y_pred
-
-def zero(y_true, y_pred):
-    return K.zeros((1,))
 
 if __name__ == '__main__':
     encoder, lm = lm()

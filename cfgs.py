@@ -3,6 +3,7 @@ import pickle
 
 import model
 import baseline
+from utils import zero, identity
 
 from nltk import CFG
 from nltk.parse.generate import generate
@@ -42,7 +43,7 @@ def text_to_sequence(texts, vocab, maxlen=30, pre=False, padding='<EOS>'):
     return sequences, word_to_n, n_to_word
 
 if __name__ == '__main__':
-    X = base_cases(grammar5, 8)
+    X = base_cases(grammar5, 10)
     vocab = list('()*') + ['<EOS>']
 
     sequences, word_to_n, n_to_word = text_to_sequence(X, vocab)
@@ -52,15 +53,15 @@ if __name__ == '__main__':
     print('Contains %d unique words.' % len(vocab))
 
     print('Building model...')
-    encoder, vae_lm = baseline.lm(vocab_size=len(vocab)+1, \
-            embedding_dim=4, encoder_hidden_dim=10, decoder_hidden_dim=10, latent_dim=2)
+    encoder, vae_lm = model.vae_lm(vocab_size=len(vocab)+1, \
+            embedding_dim=4, encoder_hidden_dim=30, decoder_hidden_dim=10, latent_dim=2)
     trainer = optimizers.RMSprop(lr=0.01)
-    vae_lm.compile(optimizer=trainer, loss={'xent':None, 'dist_loss':None}, \
-            metrics={'xent':model.identity, 'dist_loss':model.identity})
+    vae_lm.compile(optimizer=trainer, loss={'xent':zero, 'dist_loss':zero}, \
+            metrics={'xent':identity, 'dist_loss':identity})
     print('Done.')
 
     print('Training model...')
-    vae_lm.fit([sequences, tf_sequences], [sequences, tf_sequences], batch_size=32, epochs=10000)
+    vae_lm.fit([sequences, tf_sequences], [sequences, tf_sequences], batch_size=32, epochs=100)
     print('Done.')
 
     RUN = 'cfgs'
