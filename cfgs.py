@@ -55,7 +55,7 @@ if __name__ == '__main__':
     print('Building model...')
     encoder, vae_lm = model.vae_lm(vocab_size=len(vocab)+1, \
             embedding_dim=4, encoder_hidden_dim=30, decoder_hidden_dim=30, latent_dim=2)
-    trainer = optimizers.RMSprop(lr=0.01)
+    trainer = optimizers.RMSprop(lr=0.005)
     vae_lm.compile(optimizer=trainer, loss={'xent':zero, 'dist_loss':zero}, \
             metrics={'xent':identity, 'dist_loss':identity})
     print('Done.')

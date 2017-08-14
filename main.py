@@ -2,8 +2,10 @@ import os
 import pickle
 
 import model
+from utils import zero, identity
 
 from keras.preprocessing.sequence import pad_sequences
+from keras import optimizers
 
 def ptb(section='test.txt', directory='ptb/', padding='<EOS>'):
     with open(os.path.join(directory, section), 'rt') as fh:
@@ -14,7 +16,7 @@ def ptb(section='test.txt', directory='ptb/', padding='<EOS>'):
     return vocab, data
 
 def text_to_sequence(texts, vocab, maxlen=30, pre=False, padding='<EOS>'):
-    word_to_n = { word : i for i, word in enumerate(vocab) }
+    word_to_n = { word : i for i, word in enumerate(vocab, 1) }
     n_to_word = { i : word for word, i in word_to_n.items() }
 
     sequences = []
@@ -36,7 +38,7 @@ if __name__ == '__main__':
 
     vocab = vocab_train.union(vocab_valid.union(vocab_test))
     X = X_train + X_valid + X_test
-    X = X[:10]
+    X = X_valid
 
     sequences, word_to_n, n_to_word = text_to_sequence(X, vocab)
     tf_sequences, _, _ = text_to_sequence(X, vocab, pre=True)
@@ -45,13 +47,14 @@ if __name__ == '__main__':
     print('Contains %d unique words.' % len(vocab))
 
     print('Building model...')
-    encoder, vae_lm = model.vae_lm(vocab_size=len(vocab))
-    vae_lm.compile(optimizer='rmsprop', loss={'kl_loss':model.zero}, \
-            metrics={'kl_loss':model.KL_Divergence})
+    encoder, vae_lm = model.vae_lm(vocab_size=len(vocab)+1)
+    trainer = optimizers.RMSprop(lr=0.005)
+    vae_lm.compile(optimizer=trainer, loss={'xent':zero, 'dist_loss':zero}, \
+            metrics={'xent':identity, 'dist_loss':identity})
     print('Done.')
 
     print('Training model...')
-    vae_lm.fit([sequences, tf_sequences], sequences, batch_size=32, epochs=1)
+    vae_lm.fit([sequences, tf_sequences], [sequences, tf_sequences], batch_size=32, epochs=1)
     print('Done.')
 
     RUN = 'preliminary'
