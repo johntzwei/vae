@@ -20,6 +20,7 @@ def vae_lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_
     x = embedding_layer(inputs)
     x = GRU(encoder_hidden_dim, input_shape=(input_length, embedding_dim), unroll=True, \
             return_state=True, name='encoder')(x)[-1]
+    x = Dropout(0.5)(x)
     mu = Dense(latent_dim)(inputs)
     sigma = Dense(latent_dim, activation='softplus')(inputs)
     z = Lambda(lambda x: x[0] + x[1] * K.random_normal(shape=(latent_dim,), mean=0., stddev=1.))([mu, sigma])
@@ -27,10 +28,11 @@ def vae_lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_
     h_0 = Dense(decoder_hidden_dim)(z)
     x = embedding_layer(tf)
     x = GRU(decoder_hidden_dim, name='decoder', unroll=True, return_sequences=True, activation=None)(x, initial_state=[h_0])
+    x = Dropout(0.5)(x)
     x = TimeDistributed(Dense(vocab_size, activation='softmax'))(x)
 
     #loss calculations
-    dist_loss = Lambda(maximize_noise_loss, name='dist_loss')([mu, sigma])
+    dist_loss = Lambda(kl_loss, name='dist_loss')([mu, sigma])
     one_hot = Embedding(input_dim=vocab_size, output_dim=vocab_size, \
             embeddings_initializer='identity', mask_zero=True, trainable=False)(inputs)
     xent = Lambda(lambda x: neg_log_likelihood(x[0], x[1]), output_shape=(1,), name='xent')([one_hot, x])
