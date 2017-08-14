@@ -10,7 +10,7 @@ from keras.layers.recurrent import LSTM, GRU
 import keras.backend as K
 
 def vae_lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_dim=100, \
-        decoder_hidden_dim=100, latent_dim=50):
+        decoder_hidden_dim=100, latent_dim=50, encoder_dropout=0.5, decoder_dropout=0.5):
 
     inputs = Input(shape=(input_length,))       #n_0, n_1, ...
     tf = Input(shape=(input_length,))           #<EOS>, n_0, ...
@@ -20,17 +20,18 @@ def vae_lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_
     x = embedding_layer(inputs)
     x = GRU(encoder_hidden_dim, input_shape=(input_length, embedding_dim), unroll=True, \
             return_state=True, name='encoder')(x)[-1]
-    x = Dropout(0.5)(x)
+    x = Dropout(encoder_dropout)(x)
+
     mu = Dense(latent_dim)(inputs)
     sigma = Dense(latent_dim, activation='relu')(inputs)
     z = Lambda(lambda x: x[0] + x[1] * K.random_normal(shape=(latent_dim,), mean=0., stddev=1.))([mu, sigma])
-
     h_0 = Dense(decoder_hidden_dim)(z)
+
     x = embedding_layer(tf)
-    x = Lambda(lambda x: K.sum(x, axis=1))(x)
-    x = RepeatVector(input_length)(x)
+    #x = Lambda(lambda x: K.sum(x, axis=1))(x)
+    #x = RepeatVector(input_length)(x)
     x = GRU(decoder_hidden_dim, name='decoder', unroll=True, return_sequences=True, activation=None)(x, initial_state=[h_0])
-    x = Dropout(0.5)(x)
+    x = Dropout(decoder_dropout)(x)
     x = TimeDistributed(Dense(vocab_size, activation='softmax'))(x)
 
     #loss calculations
@@ -49,7 +50,7 @@ def vae_lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_
 #distribution losses
 def kl_loss(x):
     mu, sigma = x[0], x[1]
-    return -0.5 * K.sum(1 + K.log(sigma) - K.square(mu) - sigma)
+    return -0.5 * K.sum(1 + K.log(sigma) - K.square(mu) - sigma, axis=-1)
 
 def maximize_noise_loss(x):
     mu, sigma = x[0], x[1]
