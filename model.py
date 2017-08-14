@@ -5,7 +5,7 @@ from keras.layers import Input
 from keras.layers.wrappers import TimeDistributed
 from keras.layers.core import Dense, Dropout, Lambda, RepeatVector
 from keras.layers.embeddings import Embedding
-from keras.layers.recurrent import LSTM, GRU
+from keras.layers.recurrent import LSTM, GRU, SimpleRNN
 
 import keras.backend as K
 
@@ -18,19 +18,21 @@ def vae_lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_
             input_length=input_length, mask_zero=True)
 
     x = embedding_layer(inputs)
-    x = GRU(encoder_hidden_dim, input_shape=(input_length, embedding_dim), unroll=True, \
+    x = LSTM(encoder_hidden_dim, input_shape=(input_length, embedding_dim), unroll=True, \
             return_state=True, name='encoder')(x)[-1]
     x = Dropout(encoder_dropout)(x)
 
-    mu = Dense(latent_dim)(inputs)
-    sigma = Dense(latent_dim, activation='relu')(inputs)
+    x = Dense(latent_dim)(inputs)
+    mu = Lambda(lambda x: K.clip(x, -10, 10))(x)
+    x = Dense(latent_dim, activation='relu')(inputs)
+    sigma = Lambda(lambda x: K.clip(x, 1e-06, 10))(x)
     z = Lambda(lambda x: x[0] + x[1] * K.random_normal(shape=(latent_dim,), mean=0., stddev=1.))([mu, sigma])
     h_0 = Dense(decoder_hidden_dim)(z)
 
     x = embedding_layer(tf)
-    #x = Lambda(lambda x: K.sum(x, axis=1))(x)
-    #x = RepeatVector(input_length)(x)
-    x = GRU(decoder_hidden_dim, name='decoder', unroll=True, return_sequences=True, activation=None)(x, initial_state=[h_0])
+    x = Lambda(lambda x: K.sum(x, axis=1))(x)
+    x = RepeatVector(input_length)(x)
+    x = SimpleRNN(decoder_hidden_dim, name='decoder', unroll=True, return_sequences=True)(x, initial_state=[h_0])
     x = Dropout(decoder_dropout)(x)
     x = TimeDistributed(Dense(vocab_size, activation='softmax'))(x)
 
@@ -39,8 +41,7 @@ def vae_lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_
     one_hot = Embedding(input_dim=vocab_size, output_dim=vocab_size, \
             embeddings_initializer='identity', mask_zero=True, trainable=False)(inputs)
     xent = Lambda(lambda x: neg_log_likelihood(x[0], x[1]), output_shape=(1,), name='xent')([one_hot, x])
-    loss = Lambda(lambda x: x[0] + K.exp(-K.stop_gradient(x[0])) * x[1], \
-            output_shape=(1,))([xent, dist_loss])
+    loss = Lambda(lambda x: x[0] + K.exp(-K.stop_gradient(x[0])) * x[1], output_shape=(1,))([xent, dist_loss])
     x = CustomLossLayer()(loss)
 
     encoder = Model(inputs=[inputs], outputs=[mu, sigma])
@@ -50,7 +51,7 @@ def vae_lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_
 #distribution losses
 def kl_loss(x):
     mu, sigma = x[0], x[1]
-    return -0.5 * K.sum(1 + K.log(sigma) - K.square(mu) - sigma, axis=-1)
+    return -0.5 * K.sum(1 + K.log(sigma) - K.square(mu) - sigma)
 
 def maximize_noise_loss(x):
     mu, sigma = x[0], x[1]
