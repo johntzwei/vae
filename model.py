@@ -3,7 +3,7 @@ from utils import CustomLossLayer, neg_log_likelihood
 from keras.models import Model
 from keras.layers import Input
 from keras.layers.wrappers import TimeDistributed
-from keras.layers.core import Dense, Lambda
+from keras.layers.core import Dense, Dropout, Lambda
 from keras.layers.embeddings import Embedding
 from keras.layers.recurrent import LSTM, GRU
 
