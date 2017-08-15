@@ -7,6 +7,7 @@ from keras.layers.core import Dense, Dropout, Lambda, RepeatVector
 from keras.layers.embeddings import Embedding
 from keras.layers.recurrent import LSTM, GRU, SimpleRNN
 
+import keras.initializers
 import keras.backend as K
 
 def vae_lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_dim=100, \
@@ -14,7 +15,9 @@ def vae_lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_
 
     inputs = Input(shape=(input_length,))       #n_0, n_1, ...
     tf = Input(shape=(input_length,))           #<EOS>, n_0, ...
-    embedding_layer = Embedding(input_dim=vocab_size, output_dim=embedding_dim, \
+    #embedding_layer = Embedding(input_dim=vocab_size, output_dim=embedding_dim, \
+    embedding_layer = Embedding(input_dim=vocab_size, output_dim=vocab_size, \
+            embeddings_initializer='identity', trainable=False, \
             input_length=input_length, mask_zero=True)
 
     x = embedding_layer(inputs)
@@ -22,17 +25,19 @@ def vae_lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_
             return_state=True, name='encoder')(x)[-1]
     x = Dropout(encoder_dropout)(x)
 
-    x = Dense(latent_dim)(inputs)
-    mu = Lambda(lambda x: K.clip(x, -10, 10))(x)
-    x = Dense(latent_dim, activation='relu')(inputs)
-    sigma = Lambda(lambda x: K.clip(x, 1e-06, 10))(x)
+    mu = Dense(latent_dim)(inputs)
+    sigma = Dense(latent_dim, activation='softplus')(inputs)
     z = Lambda(lambda x: x[0] + x[1] * K.random_normal(shape=(latent_dim,), mean=0., stddev=1.))([mu, sigma])
     h_0 = Dense(decoder_hidden_dim)(z)
 
+    #sum of sentence word embeddings
     x = embedding_layer(tf)
-    x = Lambda(lambda x: K.sum(x, axis=1))(x)
+    x = Lambda(lambda x: K.sum(x, axis=-1), output_shape=(input_length,))(x)
     x = RepeatVector(input_length)(x)
-    x = SimpleRNN(decoder_hidden_dim, name='decoder', unroll=True, return_sequences=True)(x, initial_state=[h_0])
+    c_0 = Lambda(lambda x: K.variable(keras.initializers.Zeros()((decoder_hidden_dim, decoder_hidden_dim)), \
+            dtype=K.floatx(), name='decoder_c0'))(x)
+    x = LSTM(decoder_hidden_dim, name='decoder', unroll=True, return_sequences=True, \
+            )(x, initial_state=[h_0, c_0])
     x = Dropout(decoder_dropout)(x)
     x = TimeDistributed(Dense(vocab_size, activation='softmax'))(x)
 
