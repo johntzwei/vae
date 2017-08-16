@@ -4,7 +4,7 @@ import pickle
 from bokeh.plotting import output_file, ColumnDataSource, figure, show
 from bokeh.models import HoverTool, WheelZoomTool, PanTool, BoxZoomTool, ResetTool, SaveTool
 
-EMBEDDINGS = 'runs/cfgs/embeddings.pkl'
+EMBEDDINGS = 'runs/preliminary/embeddings.pkl'
 save_dir = os.path.dirname(EMBEDDINGS)
 
 embeddings = pickle.load(open(EMBEDDINGS, 'rb'))

@@ -18,9 +18,9 @@ def vae_lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_
     inputs = Input(shape=(input_length,))       #n_0, n_1, ...
     tf = Input(shape=(input_length,))           #<EOS>, n_0, ...
 
-    #embedding_layer = Embedding(input_dim=vocab_size, output_dim=vocab_size, \
-    #        embeddings_initializer='identity', trainable=False, \
-    embedding_layer = Embedding(input_dim=vocab_size, output_dim=embedding_dim, \
+    #embedding_layer = Embedding(input_dim=vocab_size, output_dim=embedding_dim, \
+    embedding_layer = Embedding(input_dim=vocab_size, output_dim=vocab_size, \
+            embeddings_initializer='identity', trainable=False, \
             input_length=input_length, mask_zero=True)
 
     x = embedding_layer(inputs)
@@ -30,6 +30,7 @@ def vae_lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_
 
     mu = Dense(latent_dim)(inputs)
     sigma = Dense(latent_dim, activation='softplus')(inputs)
+
     z = Lambda(lambda x: x[0] + x[1] * K.random_normal(shape=(latent_dim,), mean=0., stddev=1.))([mu, sigma])
     z = RepeatVector(input_length)(z)
 
@@ -48,7 +49,7 @@ def vae_lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_
     x = TimeDistributed(Dense(vocab_size, activation='softmax'))(x)
 
     #loss calculations
-    dist_loss = Lambda(kl_loss, name='dist_loss')([mu, sigma])
+    dist_loss = Lambda(box_loss, name='dist_loss')([mu, sigma])
     one_hot = Embedding(input_dim=vocab_size, output_dim=vocab_size, \
             embeddings_initializer='identity', mask_zero=True, trainable=False)(inputs)
     xent = Lambda(lambda x: neg_log_likelihood(x[0], x[1]), output_shape=(1,), name='xent')([one_hot, x])
@@ -67,6 +68,10 @@ def kl_loss(x):
 def maximize_noise_loss(x):
     mu, sigma = x[0], x[1]
     return K.sum(K.square(mu) - K.square(sigma))
+
+def box_loss(x, box=10.):
+    mu, sigma = x[0], x[1]
+    return K.sum(-K.square(sigma)) + K.square(K.minimum(0., mu-box)) + K.square(K.maximum(0., box+mu))
 
 #annealing
 def exp_annealing(x):
