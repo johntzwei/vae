@@ -38,7 +38,9 @@ if __name__ == '__main__':
 
     vocab = vocab_train.union(vocab_valid.union(vocab_test))
     X = X_train + X_valid + X_test
-    X = X_valid
+
+    vocab = vocab_valid
+    X = X_valid[:1000]
 
     sequences, word_to_n, n_to_word = text_to_sequence(X, vocab)
     tf_sequences, _, _ = text_to_sequence(X, vocab, pre=True)
@@ -47,14 +49,14 @@ if __name__ == '__main__':
     print('Contains %d unique words.' % len(vocab))
 
     print('Building model...')
-    encoder, vae_lm = model.vae_lm(vocab_size=len(vocab)+1)
-    trainer = optimizers.RMSprop(lr=0.005)
+    encoder, vae_lm = model.vae_lm(vocab_size=len(vocab)+1, latent_dim=2)
+    trainer = optimizers.RMSprop(lr=0.001)
     vae_lm.compile(optimizer=trainer, loss={'xent':zero, 'dist_loss':zero}, \
             metrics={'xent':identity, 'dist_loss':identity})
     print('Done.')
 
     print('Training model...')
-    vae_lm.fit([sequences, tf_sequences], [sequences, tf_sequences], batch_size=32, epochs=1)
+    vae_lm.fit([sequences, tf_sequences], [sequences, tf_sequences], batch_size=32, epochs=500)
     print('Done.')
 
     RUN = 'preliminary'

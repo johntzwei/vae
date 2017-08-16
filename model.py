@@ -6,6 +6,7 @@ from keras.layers.wrappers import TimeDistributed
 from keras.layers.core import Dense, Dropout, Lambda, RepeatVector
 from keras.layers.embeddings import Embedding
 from keras.layers.recurrent import LSTM, GRU, SimpleRNN
+from keras.layers.merge import Concatenate
 
 import keras.initializers
 import keras.backend as K
@@ -15,6 +16,7 @@ def vae_lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_
 
     inputs = Input(shape=(input_length,))       #n_0, n_1, ...
     tf = Input(shape=(input_length,))           #<EOS>, n_0, ...
+
     #embedding_layer = Embedding(input_dim=vocab_size, output_dim=embedding_dim, \
     embedding_layer = Embedding(input_dim=vocab_size, output_dim=vocab_size, \
             embeddings_initializer='identity', trainable=False, \
@@ -34,19 +36,17 @@ def vae_lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_
     x = embedding_layer(tf)
     x = Lambda(lambda x: K.sum(x, axis=-1), output_shape=(input_length,))(x)
     x = RepeatVector(input_length)(x)
-    c_0 = Lambda(lambda x: K.variable(keras.initializers.Zeros()((decoder_hidden_dim, decoder_hidden_dim)), \
-            dtype=K.floatx(), name='decoder_c0'))(x)
     x = LSTM(decoder_hidden_dim, name='decoder', unroll=True, return_sequences=True, \
-            )(x, initial_state=[h_0, c_0])
+            )(x, initial_state=[h_0, h_0])
     x = Dropout(decoder_dropout)(x)
     x = TimeDistributed(Dense(vocab_size, activation='softmax'))(x)
 
     #loss calculations
-    dist_loss = Lambda(kl_loss, name='dist_loss')([mu, sigma])
+    dist_loss = Lambda(maximize_noise_loss, name='dist_loss')([mu, sigma])
     one_hot = Embedding(input_dim=vocab_size, output_dim=vocab_size, \
             embeddings_initializer='identity', mask_zero=True, trainable=False)(inputs)
     xent = Lambda(lambda x: neg_log_likelihood(x[0], x[1]), output_shape=(1,), name='xent')([one_hot, x])
-    loss = Lambda(lambda x: x[0] + K.exp(-K.stop_gradient(x[0])) * x[1], output_shape=(1,))([xent, dist_loss])
+    loss = Lambda(exp_annealing, output_shape=(1,))([xent, dist_loss])
     x = CustomLossLayer()(loss)
 
     encoder = Model(inputs=[inputs], outputs=[mu, sigma])
@@ -60,7 +60,11 @@ def kl_loss(x):
 
 def maximize_noise_loss(x):
     mu, sigma = x[0], x[1]
-    return 1e-06 + K.sum(K.square(mu) + 1./K.square(sigma))
+    return K.sum(K.square(mu) - K.square(sigma))
+
+#annealing
+def exp_annealing(x):
+    return x[0] + K.exp(-K.stop_gradient(x[0])) * x[1]
 
 if __name__ == '__main__':
     encoder, lm = vae_lm()
