@@ -49,14 +49,15 @@ if __name__ == '__main__':
     print('Contains %d unique words.' % len(vocab))
 
     print('Building model...')
-    encoder, vae_lm = model.vae_lm(vocab_size=len(vocab)+1, latent_dim=2)
-    trainer = optimizers.RMSprop(lr=0.001)
+    encoder, vae_lm = model.vae_lm(vocab_size=len(vocab)+1, latent_dim=2, \
+            encoder_hidden_dim=100, decoder_hidden_dim=300, embedding_dim=50)
+    trainer = optimizers.Adam()
     vae_lm.compile(optimizer=trainer, loss={'xent':zero, 'dist_loss':zero}, \
             metrics={'xent':identity, 'dist_loss':identity})
     print('Done.')
 
     print('Training model...')
-    vae_lm.fit([sequences, tf_sequences], [sequences, tf_sequences], batch_size=32, epochs=500)
+    vae_lm.fit([sequences, tf_sequences], [sequences, tf_sequences], batch_size=1, epochs=300)
     print('Done.')
 
     RUN = 'preliminary'
