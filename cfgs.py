@@ -43,7 +43,7 @@ def text_to_sequence(texts, vocab, maxlen=30, pre=False, padding='<EOS>'):
     return sequences, word_to_n, n_to_word
 
 if __name__ == '__main__':
-    X = base_cases(grammar5, 8)
+    X = base_cases(grammar5, 10)
     vocab = list('()*') + ['<EOS>']
 
     sequences, word_to_n, n_to_word = text_to_sequence(X, vocab)
@@ -55,14 +55,14 @@ if __name__ == '__main__':
     print('Building model...')
     encoder, vae_lm = model.vae_lm(vocab_size=len(vocab)+1, \
             embedding_dim=4, encoder_hidden_dim=100, decoder_hidden_dim=100, latent_dim=2, \
-            encoder_dropout=0.7, decoder_dropout=0.7)
-    trainer = optimizers.RMSprop()
+            encoder_dropout=0., decoder_dropout=0.)
+    trainer = optimizers.Adam()
     vae_lm.compile(optimizer=trainer, loss={'xent':zero, 'dist_loss':zero}, \
             metrics={'xent':identity, 'dist_loss':identity})
     print('Done.')
 
     print('Training model...')
-    vae_lm.fit([sequences, tf_sequences], [sequences, tf_sequences], batch_size=32, epochs=5000, verbose=1)
+    vae_lm.fit([sequences, tf_sequences], [sequences, tf_sequences], batch_size=128, epochs=2000, verbose=1)
     print('Done.')
 
     RUN = 'cfgs'

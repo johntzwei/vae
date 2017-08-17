@@ -33,10 +33,12 @@ def vae_lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_
     z = Lambda(lambda x: x[0] + x[1] * K.random_normal(shape=(latent_dim,), mean=0., stddev=1.))([mu, sigma])
     h_0 = Dense(decoder_hidden_dim)(z)
 
-    x = embedding_layer(tf)
+    tf_seq = embedding_layer(tf)
     #sum of sentence word embeddings
-    x = Lambda(lambda x: K.sum(x, axis=-1), output_shape=(input_length,))(x)
+    x = Lambda(lambda x: K.sum(x, axis=1), output_shape=(vocab_size,))(tf_seq)
     x = RepeatVector(input_length)(x)
+
+    x = Concatenate()([tf_seq, x])
     x = LSTM(decoder_hidden_dim, name='decoder', unroll=True, return_sequences=True, \
             )(x, initial_state=[h_0, h_0])
     x = Dropout(decoder_dropout)(x)
