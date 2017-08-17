@@ -62,7 +62,7 @@ if __name__ == '__main__':
     print('Done.')
 
     print('Training model...')
-    vae_lm.fit([sequences, tf_sequences], [sequences, tf_sequences], batch_size=1, epochs=500)
+    vae_lm.fit([sequences, tf_sequences], [sequences, tf_sequences], batch_size=1, epochs=200)
     print('Done.')
 
     RUN = 'cfgs'

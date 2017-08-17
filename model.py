@@ -69,13 +69,16 @@ def maximize_noise_loss(x):
     mu, sigma = x[0], x[1]
     return K.sum(K.square(mu) - K.square(sigma))
 
-def box_loss(x, box=10.):
+def box_loss(x, box=100.):
     mu, sigma = x[0], x[1]
     return K.sum(-K.square(sigma)) + K.square(K.minimum(0., mu-box)) + K.square(K.maximum(0., box+mu))
 
 #annealing
 def exp_annealing(x):
     return x[0] + K.exp(-K.stop_gradient(x[0])) * x[1]
+
+def add_losses(x):
+    return x[0] + x[1]
 
 if __name__ == '__main__':
     encoder, lm = vae_lm()
