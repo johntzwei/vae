@@ -39,11 +39,11 @@ def text_to_sequence(texts, vocab, maxlen=30, pre=False, padding='<EOS>'):
         for sequence in sequences:
             sequence.insert(0, word_to_n[padding])
 
-    sequences = pad_sequences(sequences, maxlen)
+    sequences = pad_sequences(sequences, maxlen, padding='post', truncating='post')
     return sequences, word_to_n, n_to_word
 
 if __name__ == '__main__':
-    X = base_cases(grammar5, 10)
+    X = base_cases(grammar5, 8)
     vocab = list('()*') + ['<EOS>']
 
     sequences, word_to_n, n_to_word = text_to_sequence(X, vocab)
@@ -62,7 +62,7 @@ if __name__ == '__main__':
     print('Done.')
 
     print('Training model...')
-    vae_lm.fit([sequences, tf_sequences], [sequences, tf_sequences], batch_size=32, epochs=200)
+    vae_lm.fit([sequences, tf_sequences], [sequences, tf_sequences], batch_size=32, epochs=5000, verbose=1)
     print('Done.')
 
     RUN = 'cfgs'

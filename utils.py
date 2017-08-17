@@ -1,8 +1,6 @@
 from keras.engine.topology import Layer
-
+from keras.layers.merge import multiply
 import keras.backend as K
-import tensorflow as tf
-K.set_session(tf.Session())
 
 #custom loss
 class CustomLossLayer(Layer):
@@ -15,7 +13,7 @@ class CustomLossLayer(Layer):
         return inputs
 
 def neg_log_likelihood(y_true, y_pred):
-    probs = tf.multiply(y_true, y_pred)
+    probs = multiply([y_true, y_pred])
     probs = K.sum(probs, axis=-1)
     return 1e-06 + K.sum(-K.log(probs))
 
