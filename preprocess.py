@@ -20,7 +20,7 @@ def linearize(tree, label=False, token=False, margin=1000):
         leaf = normalize(subtree[0])
         
         if token:
-            subtree[0] == '<TOK>'
+            subtree[0] = '<TOK>'
             continue
 
         if leaf not in vocab:
