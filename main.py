@@ -8,7 +8,7 @@ from recurrentshop.cells import LSTMCell
 from keras.models import Model
 from keras.layers import Input
 from keras.layers.core import Dense, Activation, Dropout, Lambda, \
-        RepeatVector
+        RepeatVector, Permute
 from keras.layers.embeddings import Embedding
 from keras.layers.recurrent import LSTM
 from keras.layers.merge import Concatenate, Add, Multiply
@@ -68,38 +68,47 @@ class AttentionLSTM(LSTM):
         constants.insert(0, inputs)
         return constants
 
-    def step(self, inputs, states):
+    def step(self, inputs2, states):
         h_tm1 = states[0]
         c_tm1 = states[1]
         d_tm1 = states[2]
         inputs = states[3]
 
         samples = K.int_shape(inputs)[1]
-        d_tm1 = d_tm1[:, :samples]
+        print('step...')
+        print('samples %d' % samples)
 
         x1 = TimeDistributed(self.W_1)(inputs)
         x2 = self.W_2(d_tm1)
         x = Add()([x1, x2])         #broadcast
         x = Activation('tanh')(x)
+        print('tanh %s' % str(K.int_shape(x)))
 
         #dot product of v with each row
-        x = K.dot(self.V, x)              #broadcast
+        x = self.V * x              #broadcast
         x = K.sum(x, axis=-1)
-        a_t = Activation('softmax')(x)
+        print('vT %s' % str(K.int_shape(x)))
 
-        x = K.dot(a_t, inputs)
-        d_t = K.sum(x, axis=-1)
-        lstm_states = [h_tm1, c_tm1] + states[4:]
+        x = Activation('softmax')(x)
+        a_t = K.reshape(x, (samples, 1))
+        x = inputs * a_t          #broadcast
+        d_t = K.sum(x, axis=-2)
+        print('d_t %s' % str(K.int_shape(d_t)))
+
+        print('inputs_step %s' % str(K.int_shape(inputs2)))
+        #d_t = self.preprocess_input(d_t)
+        lstm_states = [h_tm1, c_tm1] + list(states[4:])
         h, (h, c) = super(AttentionLSTM, self).step(d_t, lstm_states)      #pass in only lstm states
         return h, [h, c, d_t]
 
     def compute_output_shape(self, input_shape):
-        return (self.output_length, self.output_dim)
+        input_shape = (input_shape[0], self.output_length, input_shape[2])
+        return super(AttentionLSTM, self).compute_output_shape(input_shape)
 
 #Grammar as a Foreign Language
 #Vinyals 2015 et al.
 #TODO incorporate hidden state
-def Seq2SeqAttention(input_length, vocab_size, encoder_hidden_dim=256, decoder_hidden_dim=256, \
+def Seq2SeqAttention(input_length, output_length, vocab_size, encoder_hidden_dim=256, decoder_hidden_dim=256, \
         encoder_dropout=0.5, decoder_dropout=0.5, embedding_dim=128):
     inputs = Input(shape=(input_length,))
     x = Embedding(input_dim=vocab_size+1, output_dim=embedding_dim, \
@@ -109,12 +118,15 @@ def Seq2SeqAttention(input_length, vocab_size, encoder_hidden_dim=256, decoder_h
             return_sequences=True)(x)
     x2 = LSTM(encoder_hidden_dim, input_shape=(input_length, embedding_dim), unroll=True, \
             return_sequences=True, go_backwards=True)(x)
-    x = Concatenate(axis=-1)([x1, x2])
+    x = Add()([x1, x2])
     encoding = Dropout(encoder_dropout)(x)          #(None, 50, 512)
     
-    x = AttentionLSTM(decoder_hidden_dim, output_length=200)(encoding)
+    x = AttentionLSTM(decoder_hidden_dim, output_length=output_length, return_sequences=True, \
+            implementation=1)(encoding)
     x = Dropout(decoder_dropout)(x)                 #(None, 50, 256)
+    print(K.int_shape(x))
     outputs = TimeDistributed(Dense(5, activation='softmax'))(x)
+    print(K.int_shape(outputs))
     return Model(inputs=inputs, outputs=outputs)
 
 if __name__ == '__main__':
@@ -135,13 +147,13 @@ if __name__ == '__main__':
 
     print('Building model...')
     optimizer = optimizers.RMSprop(lr=0.001)
-    model = Seq2SeqAttention(input_length=10, vocab_size=len(in_vocab))
+    model = Seq2SeqAttention(input_length=10, output_length=10, vocab_size=len(in_vocab))
     model.compile(optimizer=optimizer, loss='categorical_crossentropy')
     plot_model(model, to_file='model.png')
     print('Done.')
 
     print('Training model...')
-    model.fit(X_train_seq, one_hot(y_train_seq), batch_size=128, epochs=1, verbose=2)
+    model.fit(X_train_seq, one_hot(y_train_seq), batch_size=128, epochs=1)
     print('Done.')
 
     print('Saving models...')
