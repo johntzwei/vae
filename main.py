@@ -7,13 +7,15 @@ from recurrentshop.cells import LSTMCell
 
 from keras.models import Model
 from keras.layers import Input
-from keras.layers.core import Dense, Dropout, Lambda, Activation
+from keras.layers.core import Dense, Activation, Dropout, Lambda, \
+        RepeatVector
 from keras.layers.embeddings import Embedding
 from keras.layers.recurrent import LSTM
 from keras.layers.merge import Concatenate, Add, Multiply
 from keras.layers.wrappers import TimeDistributed
 
 from keras.preprocessing.sequence import pad_sequences
+from keras.utils import plot_model
 from keras import optimizers
 import keras.backend as K
 
@@ -41,54 +43,79 @@ def text_to_sequence(texts, vocab, maxlen=30, padding='<EOS>'):
     sequences = pad_sequences(sequences, maxlen)
     return sequences, word_to_n, n_to_word
 
-def one_hot(seq):
-    eye = np.eye(seq.max()+1)
+def one_hot(seqs):
+    n_values = np.max(seqs) + 1
+    eye = np.eye(n_values)
     eye[0, 0] = 0
-    ar = eye[seq]
-    return ar
+    return np.array([ eye[seq] for seq in seqs ])
+
+class AttentionLSTM(LSTM):
+    def __init__(self, output_dim, output_length=100, **kwargs):
+        super(AttentionLSTM, self).__init__(output_dim, **kwargs)
+        self.output_length = output_length
+
+    def build(self, input_shape):
+        super(AttentionLSTM, self).build(input_shape)
+
+        self.states = [None, None, None]
+        self.W_1 = Dense(self.units, use_bias=False)
+        self.W_2 = Dense(self.units, use_bias=False)
+        self.V = self.add_weight(shape=(self.units,), \
+                initializer='glorot_uniform', name='v')
+
+    def get_constants(self, inputs, training=None):
+        constants = super(AttentionLSTM, self).get_constants(inputs, training=training)
+        constants.insert(0, inputs)
+        return constants
+
+    def step(self, inputs, states):
+        h_tm1 = states[0]
+        c_tm1 = states[1]
+        d_tm1 = states[2]
+        inputs = states[3]
+
+        samples = K.int_shape(inputs)[1]
+        d_tm1 = d_tm1[:, :samples]
+
+        x1 = TimeDistributed(self.W_1)(inputs)
+        x2 = self.W_2(d_tm1)
+        x = Add()([x1, x2])         #broadcast
+        x = Activation('tanh')(x)
+
+        #dot product of v with each row
+        x = K.dot(self.V, x)              #broadcast
+        x = K.sum(x, axis=-1)
+        a_t = Activation('softmax')(x)
+
+        x = K.dot(a_t, inputs)
+        d_t = K.sum(x, axis=-1)
+        lstm_states = [h_tm1, c_tm1] + states[4:]
+        h, (h, c) = super(AttentionLSTM, self).step(d_t, lstm_states)      #pass in only lstm states
+        return h, [h, c, d_t]
+
+    def compute_output_shape(self, input_shape):
+        return (self.output_length, self.output_dim)
 
 #Grammar as a Foreign Language
 #Vinyals 2015 et al.
 #TODO incorporate hidden state
-def AttentionDecoder(hidden_dim, input_shape, initial_state=None):
-    batch_size, input_length, input_dim = input_shape
-    inputs = Input(shape=input_shape)
-    a_tm1 = Input(shape=(input_length,))
-
-    d_tm1 = Input(shape=(input_length,))
-    h_tm1 = Input(shape=(hidden_dim,))
-    c_tm1 = Input(shape=(hidden_dim,))
-
-    x1 = Dense(hidden_dim, use_bias=False)(h_tm1)
-    x2 = Dense(hidden_dim, use_bias=False)(d_tm1)
-    x = Add()([x1, x2])
-    x = Activation('tanh')(x)
-    x = Dense(input_length)(x)
-
-    a_t = Dense(input_length, activation='softmax')(x)
-    d_t = Multiply()([a_t, x])
-    _, h_t, c_t = LSTMCell(hidden_dim, input_dim=input_dim)([d_t, h_tm1, c_tm1])
-
-    return RecurrentModel(input=inputs, input_shape=(input_length, input_dim), initial_states=[d_tm1, h_tm1, c_tm1], \
-            output=h_t, final_states=[d_t, h_t, c_t], unroll=True, return_sequences=True)
-
 def Seq2SeqAttention(input_length, vocab_size, encoder_hidden_dim=256, decoder_hidden_dim=256, \
         encoder_dropout=0.5, decoder_dropout=0.5, embedding_dim=128):
     inputs = Input(shape=(input_length,))
-    x = Embedding(input_dim=vocab_size, output_dim=embedding_dim, \
+    x = Embedding(input_dim=vocab_size+1, output_dim=embedding_dim, \
             input_length=input_length, mask_zero=True)(inputs)
 
     x1 = LSTM(encoder_hidden_dim, input_shape=(input_length, embedding_dim), unroll=True, \
             return_sequences=True)(x)
     x2 = LSTM(encoder_hidden_dim, input_shape=(input_length, embedding_dim), unroll=True, \
             return_sequences=True, go_backwards=True)(x)
-    x = Concatenate()([x1, x2])
+    x = Concatenate(axis=-1)([x1, x2])
     encoding = Dropout(encoder_dropout)(x)          #(None, 50, 512)
     
-    x = AttentionDecoder(decoder_hidden_dim, input_shape=K.int_shape(encoding), initial_state=None)(encoding)
+    x = AttentionLSTM(decoder_hidden_dim, output_length=200)(encoding)
     x = Dropout(decoder_dropout)(x)                 #(None, 50, 256)
-    decoding = TimeDistributed(Dense(5, activation='softmax'))(x)
-    return Model(inputs=inputs, outputs=decoding)
+    outputs = TimeDistributed(Dense(5, activation='softmax'))(x)
+    return Model(inputs=inputs, outputs=outputs)
 
 if __name__ == '__main__':
     print('Reading train/valid data...')
@@ -101,20 +128,20 @@ if __name__ == '__main__':
     #TODO still need to read in validation and test data
     X_train_seq, word_to_n, n_to_word = text_to_sequence(X_train, in_vocab, maxlen=10)
     y_train_seq, _, _ = text_to_sequence(y_train, out_vocab, maxlen=10)
-    y_train_seq = np.array([ one_hot(seq) for seq in y_train_seq ])
     print('Done.')
 
     print('Read in %d examples.' % len(X_train))
     print('Contains %d unique words.' % len(in_vocab))
 
     print('Building model...')
-    optimizer = optimizers.Adam(lr=0.001)
+    optimizer = optimizers.RMSprop(lr=0.001)
     model = Seq2SeqAttention(input_length=10, vocab_size=len(in_vocab))
     model.compile(optimizer=optimizer, loss='categorical_crossentropy')
+    plot_model(model, to_file='model.png')
     print('Done.')
 
     print('Training model...')
-    model.fit(X_train_seq, y_train_seq, batch_size=128, epochs=500)
+    model.fit(X_train_seq, one_hot(y_train_seq), batch_size=128, epochs=1, verbose=2)
     print('Done.')
 
     print('Saving models...')

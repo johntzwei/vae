@@ -34,7 +34,7 @@ def linearize(tree, label=False, token=False, margin=1000):
 
     return lin
 
-def get_vocab(fn='data/vocab', symbols=4):
+def get_vocab(fn='data/vocab', symbols=2):
     vocab = {}
     for sections in SECTIONS:
         for section in range(sections[0], sections[1]+1):

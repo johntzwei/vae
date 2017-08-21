@@ -34,15 +34,15 @@ def vae_lm(vocab_size=10000, input_length=30, embedding_dim=300, encoder_hidden_
 
     #sum of sentence word embeddings
     x = embedding_layer(tf)
-    x = Lambda(lambda x: K.sum(x, axis=-1), output_shape=(input_length,))(x)
-    x = RepeatVector(input_length)(x)
+    #x = Lambda(lambda x: K.sum(x, axis=-1), output_shape=(input_length,))(x)
+    #x = RepeatVector(input_length)(x)
     x = LSTM(decoder_hidden_dim, name='decoder', unroll=True, return_sequences=True, \
             )(x, initial_state=[h_0, h_0])
     x = Dropout(decoder_dropout)(x)
     x = TimeDistributed(Dense(vocab_size, activation='softmax'))(x)
 
     #loss calculations
-    dist_loss = Lambda(maximize_noise_loss, name='dist_loss')([mu, sigma])
+    dist_loss = Lambda(kl_loss, name='dist_loss', output_shape=(1,))([mu, sigma])
     one_hot = Embedding(input_dim=vocab_size, output_dim=vocab_size, \
             embeddings_initializer='identity', mask_zero=True, trainable=False)(inputs)
     xent = Lambda(lambda x: neg_log_likelihood(x[0], x[1]), output_shape=(1,), name='xent')([one_hot, x])
@@ -62,9 +62,17 @@ def maximize_noise_loss(x):
     mu, sigma = x[0], x[1]
     return K.sum(K.square(mu) - K.square(sigma))
 
+def box_loss(x, box=10., sig_box=1.):
+    mu, sigma = x[0], x[1]
+    return K.sum(K.exp(K.maximum(0., box-sigma)) \
+            + K.square(K.minimum(0., mu-box)) + K.square(K.maximum(0., box+mu)))
+
 #annealing
 def exp_annealing(x):
     return x[0] + K.exp(-K.stop_gradient(x[0])) * x[1]
+
+def add_losses(x):
+    return x[0] + x[1]
 
 if __name__ == '__main__':
     encoder, lm = vae_lm()

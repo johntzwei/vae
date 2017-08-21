@@ -17,7 +17,7 @@ class CustomLossLayer(Layer):
 def neg_log_likelihood(y_true, y_pred):
     probs = tf.multiply(y_true, y_pred)
     probs = K.sum(probs, axis=-1)
-    return 1e-06 + K.sum(-K.log(probs))
+    return K.sum(-K.log(K.epsilon() + probs))
 
 #monitoring
 def identity(y_true, y_pred):
