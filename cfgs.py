@@ -54,7 +54,7 @@ if __name__ == '__main__':
 
     print('Building model...')
     encoder, vae_lm = model.vae_lm(vocab_size=len(vocab)+1, \
-            embedding_dim=4, encoder_hidden_dim=100, decoder_hidden_dim=100, latent_dim=2, \
+            embedding_dim=4, encoder_hidden_dim=1024, decoder_hidden_dim=1024, latent_dim=2, \
             encoder_dropout=0., decoder_dropout=0.)
     trainer = optimizers.Adam()
     vae_lm.compile(optimizer=trainer, loss={'xent':zero, 'dist_loss':zero}, \
