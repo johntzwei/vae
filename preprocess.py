@@ -74,18 +74,16 @@ if __name__ == '__main__':
     vocab = get_vocab()
     print('Done.')
 
+    print('Preprocessing all sections...')
     for fn, sections in zip([ TRAIN_FILE, TEST_FILE, DEV_FILE ], SECTIONS):
-
         print('Preprocessing %s...' % fn)
         h = open(fn, 'wt')
-
         for section in range(sections[0], sections[1]+1):
             fileids = [ i for i in ptb.fileids() if i.startswith(str(section).zfill(2)) ]
             for sent, tree in zip(ptb.sents(fileids), ptb.parsed_sents(fileids)):
                 sent = [ normalize(word) if normalize(word) in vocab else '<unk>' for word in sent ]
-                lin = linearize(tree, token=True)
+                lin = linearize(tree, token=True, label=False)
                 h.write('%s\t%s\n' % (' '.join(sent), lin))
-
         h.close()
         print('Done.')
     print('Done.')

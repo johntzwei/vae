@@ -2,9 +2,6 @@ import os
 import pickle
 import numpy as np
 
-from recurrentshop import RecurrentModel
-from recurrentshop.cells import LSTMCell
-
 from keras.models import Model
 from keras.layers import Input
 from keras.layers.core import Dense, Activation, Dropout, Lambda, \
@@ -73,29 +70,23 @@ class AttentionLSTM(LSTM):
         c_tm1 = states[1]
         d_tm1 = states[2]
         inputs = states[3]
-
+        batch_size = K.int_shape(inputs)[0]
         samples = K.int_shape(inputs)[1]
-        print('step...')
-        print('samples %d' % samples)
 
         x1 = TimeDistributed(self.W_1)(inputs)
         x2 = self.W_2(d_tm1)
         x = Add()([x1, x2])         #broadcast
         x = Activation('tanh')(x)
-        print('tanh %s' % str(K.int_shape(x)))
 
         #dot product of v with each row
         x = self.V * x              #broadcast
         x = K.sum(x, axis=-1)
-        print('vT %s' % str(K.int_shape(x)))
 
         x = Activation('softmax')(x)
-        a_t = K.reshape(x, (samples, 1))
+        a_t = K.expand_dims(x, axis=-1)
         x = inputs * a_t          #broadcast
         d_t = K.sum(x, axis=-2)
-        print('d_t %s' % str(K.int_shape(d_t)))
 
-        print('inputs_step %s' % str(K.int_shape(inputs2)))
         #d_t = self.preprocess_input(d_t)
         lstm_states = [h_tm1, c_tm1] + list(states[4:])
         h, (h, c) = super(AttentionLSTM, self).step(d_t, lstm_states)      #pass in only lstm states
@@ -108,8 +99,8 @@ class AttentionLSTM(LSTM):
 #Grammar as a Foreign Language
 #Vinyals 2015 et al.
 #TODO incorporate hidden state
-def Seq2SeqAttention(input_length, output_length, vocab_size, encoder_hidden_dim=256, decoder_hidden_dim=256, \
-        encoder_dropout=0.5, decoder_dropout=0.5, embedding_dim=128):
+def Seq2SeqAttention(input_length, output_length, vocab_size, out_vocab_size, 
+        encoder_hidden_dim=256, decoder_hidden_dim=256, encoder_dropout=0.5, decoder_dropout=0.5, embedding_dim=128):
     inputs = Input(shape=(input_length,))
     x = Embedding(input_dim=vocab_size+1, output_dim=embedding_dim, \
             input_length=input_length, mask_zero=True)(inputs)
@@ -124,36 +115,41 @@ def Seq2SeqAttention(input_length, output_length, vocab_size, encoder_hidden_dim
     x = AttentionLSTM(decoder_hidden_dim, output_length=output_length, return_sequences=True, \
             implementation=1)(encoding)
     x = Dropout(decoder_dropout)(x)                 #(None, 50, 256)
-    print(K.int_shape(x))
     outputs = TimeDistributed(Dense(5, activation='softmax'))(x)
-    print(K.int_shape(outputs))
     return Model(inputs=inputs, outputs=outputs)
 
 if __name__ == '__main__':
-    print('Reading train/valid data...')
-    in_vocab, X_train = ptb(section='wsj_24', directory='data/', column=0)
-    out_vocab, y_train = ptb(section='wsj_24', directory='data/', column=1)
-
+    print('Reading vocab...')
     in_vocab = read_vocab()
     in_vocab +=  [ '<unk>', '<EOS>' ]
 
-    #TODO still need to read in validation and test data
-    X_train_seq, word_to_n, n_to_word = text_to_sequence(X_train, in_vocab, maxlen=10)
-    y_train_seq, _, _ = text_to_sequence(y_train, out_vocab, maxlen=10)
+    out_vocab = ['<EOS>', '(', ')', '<TOK>' ]
     print('Done.')
 
-    print('Read in %d examples.' % len(X_train))
+    print('Reading train/valid data...')
+    _, X_train = ptb(section='wsj_2-21', directory='data/', column=0)
+    _, y_train = ptb(section='wsj_2-21', directory='data/', column=1)
+    X_train_seq, word_to_n, n_to_word = text_to_sequence(X_train, in_vocab, maxlen=20)
+    y_train_seq, _, _ = text_to_sequence(y_train, out_vocab, maxlen=20)
+
+    _, X_valid = ptb(section='wsj_24', directory='data/', column=0)
+    _, y_valid = ptb(section='wsj_24', directory='data/', column=1)
+    X_valid_seq, word_to_n, _ = text_to_sequence(X_valid, in_vocab, maxlen=20)
+    y_valid_seq, _, _ = text_to_sequence(y_valid, out_vocab, maxlen=20)
+    print('Done.')
+
     print('Contains %d unique words.' % len(in_vocab))
+    print('Read in %d examples.' % len(X_train))
 
     print('Building model...')
     optimizer = optimizers.RMSprop(lr=0.001)
-    model = Seq2SeqAttention(input_length=10, output_length=10, vocab_size=len(in_vocab))
+    model = Seq2SeqAttention(input_length=20, output_length=20, vocab_size=len(in_vocab), out_vocab_size=len(out_vocab))
     model.compile(optimizer=optimizer, loss='categorical_crossentropy')
     plot_model(model, to_file='model.png')
     print('Done.')
 
     print('Training model...')
-    model.fit(X_train_seq, one_hot(y_train_seq), batch_size=128, epochs=1)
+    model.fit(X_train_seq, one_hot(y_train_seq), validation_data=(X_valid_seq, one_hot(y_valid_seq)), batch_size=64, epochs=1)
     print('Done.')
 
     print('Saving models...')
